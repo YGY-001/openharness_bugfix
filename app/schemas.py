@@ -7,6 +7,7 @@ class BugSubmitRequest(BaseModel):
     description: str | None = None
     file_path: str | None = None
     severity: str = "MEDIUM"
+    test_case: str | None = None
 
 
 class BugSubmitAccepted(BaseModel):
@@ -22,6 +23,7 @@ class BugTaskResponse(BaseModel):
     status: str
     progress: float = 0.0
     plan_title: str | None = None
+    plan: list[str] = Field(default_factory=list)
     current_step: int | None = None
     total_steps: int | None = None
     completed_steps: list[str] = Field(default_factory=list)
