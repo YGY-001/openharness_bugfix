@@ -66,6 +66,7 @@ async def run_planner_graph(
     code: str,
     language: str = "java",
     test_case: str | None = None,
+    description: str | None = None,
 ) -> BugFixState:
     graph = build_planner_graph()
 
@@ -73,6 +74,7 @@ async def run_planner_graph(
         code=code,
         language=language,
         test_case=test_case,
+        description=description
     )
 
     return await graph.ainvoke(initial_state)
@@ -82,6 +84,7 @@ async def run_bugfix_graph(
     code: str,
     language: str = "java",
     test_case: str | None = None,
+    description: str | None = None,
 ) -> BugFixState:
     graph = build_bugfix_graph()
 
@@ -89,6 +92,7 @@ async def run_bugfix_graph(
         code=code,
         language=language,
         test_case=test_case,
+        description=description
     )
 
     return await graph.ainvoke(initial_state)

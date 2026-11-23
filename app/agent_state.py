@@ -6,6 +6,7 @@ class BugFixState(TypedDict):
     # 输入
     code: str
     language: str
+    description: str | None
     test_case: str | None
 
     # 计划
@@ -37,11 +38,13 @@ def create_initial_state(
     code: str,
     language: str = "java",
     test_case: str | None = None,
+    description: str | None = None,
 ) -> BugFixState:
     return {
         "code": code,
         "language": language,
         "test_case": test_case,
+        "description": description,
         "plan": [],
         "current_step": 0,
         "step_results": [],
@@ -57,4 +60,5 @@ def create_initial_state(
         "replan_count": 0,
         "error": None,
         "done": False,
+
     }

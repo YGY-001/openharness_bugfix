@@ -24,17 +24,46 @@ async def run_bugfix_task(task_store: TaskStore, task_id: str) -> None:
             code=task["code"],
             language=task["language"],
             test_case=task.get("test_case"),
+            description=task.get("description"),
         )
         analysis_result = final_state.get("analysis_result") or {}
         step_results = final_state.get("step_results", [])
         plan = final_state.get("plan", [])
 
-        if analysis_result.get("status") == "skipped":
+        validation_planned = any(
+            result.get("step_type") == "validate"
+            for result in step_results
+        )
+
+        has_step_failure = any(
+            result.get("status") in {"error", "not_implemented"}
+            or (
+                    result.get("step_type") == "validate"
+                    and result.get("test_passed") is False
+            )
+            for result in step_results
+        )
+
+        no_confirmed_bugs = (
+                analysis_result.get("status") == "skipped"
+                or (
+                        analysis_result.get("status") == "success"
+                        and not analysis_result.get("confirmed_bugs", [])
+                )
+        )
+
+        if (
+                no_confirmed_bugs
+                and not final_state.get("error")
+                and not has_step_failure
+        ):
             final_status = "no_bugs_found"
-        elif final_state.get("test_passed") is True:
-            final_status = "completed"
-        else:
+        elif final_state.get("error") or has_step_failure:
             final_status = "failed"
+        elif validation_planned and final_state.get("test_passed") is not True:
+            final_status = "failed"
+        else:
+            final_status = "completed"
 
         completed_steps = []
         failed_steps = []
