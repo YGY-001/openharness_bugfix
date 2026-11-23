@@ -1,16 +1,23 @@
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
-from app.agents.reviewer import reviewer_handler
 from app.agent_state import BugFixState
+from app.agents.reviewer import reviewer_handler
+from app.agents.analyzer import analyzer_handler
+from app.agents.fixer import fixer_handler
+from app.agents.validator import validator_handler
+from app.agents.preprocessor import preprocess_handler
 
 logger = logging.getLogger(__name__)
 
 StepHandler = Callable[[BugFixState], Awaitable[dict[str, Any]]]
 
-# 后续会在这里注册 Reviewer、Analyzer、Fixer、Validator 的处理函数。
 STEP_HANDLERS: dict[str, StepHandler] = {
+    "preprocess": preprocess_handler,
     "review": reviewer_handler,
+    "analyze": analyzer_handler,
+    "fix":fixer_handler,
+    "validate":validator_handler
 }
 
 

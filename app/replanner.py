@@ -38,6 +38,13 @@ async def replanner_node(state: BugFixState) -> dict[str, Any]:
         test_passed,
         replan_count,
     )
+    analysis_result = state.get("analysis_result") or {}
+
+    if analysis_result.get("status") == "skipped":
+        return {
+            "done": True,
+            "error": None,
+        }
 
     if test_passed is True:
         return {
