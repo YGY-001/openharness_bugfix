@@ -10,7 +10,40 @@ task_persistence = TaskPersistence()
 # 当前活跃的task 避免同一会话重复排入后台
 _active_task_ids: set[str] = set()
 
+def _summarize_steps(
+    step_results: list[dict[str, Any]],
+    plan_attempt: int,
+) -> tuple[list[str], list[str]]:
+    current_results = [
+        result
+        for result in step_results
+        if result.get("plan_attempt", 0) == plan_attempt
+    ]
 
+    completed_steps = []
+    failed_steps = []
+
+    for result in current_results:
+        plan_step = result.get("plan_step", "")
+        step_type = result.get("step_type")
+        status = result.get("status")
+
+        if status == "success" and not (
+            step_type == "validate"
+            and result.get("test_passed") is False
+        ):
+            completed_steps.append(plan_step)
+
+        if status in {"error", "not_implemented"} or (
+            step_type == "validate"
+            and result.get("test_passed") is False
+        ):
+            failed_steps.append(plan_step)
+
+    return (
+        list(dict.fromkeys(completed_steps)),
+        list(dict.fromkeys(failed_steps)),
+    )
 def reserve_task(task_id: str) -> bool:
     if task_id in _active_task_ids:
         return False
@@ -41,6 +74,7 @@ async def run_bugfix_task(
     finally:
         release_task(task_id)
 
+
 async def _run_bugfix_task_body(task_store: TaskStore, task_id: str, resume_state:dict[str,Any] | None = None) -> None:
     task = task_store.get(task_id)
     if task is None:
@@ -63,6 +97,45 @@ async def _run_bugfix_task_body(task_store: TaskStore, task_id: str, resume_stat
                 "progress": resume_progress,
             },
         )
+        # 进度回调
+        async def report_progress(state: dict[str, Any]) -> None:
+            plan = state.get("plan", [])
+            total_steps = len(plan)
+            current_step = state.get("current_step", 0)
+            progress = (
+                min(current_step / total_steps, 1.0)
+                if total_steps
+                else 0.0
+            )
+
+            completed_steps, failed_steps = _summarize_steps(
+                state.get("step_results", []),
+                state.get("replan_count", 0),
+            )
+
+            try:
+                task_store.update(
+                    task_id,
+                    {
+                        "status": "running",
+                        "progress": progress,
+                        "plan_title": "Bugfix Plan-Execute Workflow",
+                        "plan": plan,
+                        "current_step": current_step,
+                        "total_steps": total_steps,
+                        "completed_steps": completed_steps,
+                        "failed_steps": failed_steps,
+                        "review_result": state.get("review_result"),
+                        "analysis_result": state.get("analysis_result"),
+                        "fix_result": state.get("fix_result"),
+                        "validation_result": state.get("validation_result"),
+                        "patch": state.get("patch"),
+                        "fixed_code": state.get("fixed_code"),
+                        "error": state.get("error"),
+                    },
+                )
+            except Exception:
+                logger.exception("Could not update progress for task %s", task_id)
 
         final_state = await run_bugfix_graph(
             code=task["code"],
@@ -72,14 +145,23 @@ async def _run_bugfix_task_body(task_store: TaskStore, task_id: str, resume_stat
             session_id=task["session_id"],
             task_persistence=task_persistence,
             resume_state=resume_state,
+            on_state=report_progress,
         )
         analysis_result = final_state.get("analysis_result") or {}
         step_results = final_state.get("step_results", [])
+        plan_attempt = final_state.get("replan_count", 0)
+
+        current_attempt_results = [
+            result
+            for result in step_results
+            if result.get("plan_attempt", 0) == plan_attempt
+        ]
+
         plan = final_state.get("plan", [])
 
         validation_planned = any(
             result.get("step_type") == "validate"
-            for result in step_results
+            for result in current_attempt_results
         )
 
         has_step_failure = any(
@@ -88,7 +170,7 @@ async def _run_bugfix_task_body(task_store: TaskStore, task_id: str, resume_stat
                     result.get("step_type") == "validate"
                     and result.get("test_passed") is False
             )
-            for result in step_results
+            for result in current_attempt_results
         )
 
         no_confirmed_bugs = (
@@ -112,26 +194,10 @@ async def _run_bugfix_task_body(task_store: TaskStore, task_id: str, resume_stat
         else:
             final_status = "completed"
 
-        completed_steps = []
-        failed_steps = []
-
-        for step_result in step_results:
-            plan_step = step_result.get("plan_step", "")
-            step_status = step_result.get("status")
-
-            if step_status == "success":
-                if not (
-                        step_result.get("step_type") == "validate"
-                        and step_result.get("test_passed") is False
-                ):
-                    completed_steps.append(plan_step)
-
-            if step_status in {"error", "not_implemented"} or (
-                    step_result.get("step_type") == "validate"
-                    and step_result.get("test_passed") is False
-            ):
-                failed_steps.append(plan_step)
-
+        completed_steps, failed_steps = _summarize_steps(
+            step_results,
+            plan_attempt,
+        )
         error = final_state.get("error")
         if final_status == "failed" and not error:
             error = "The workflow finished without a successful validation result."

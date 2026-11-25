@@ -78,6 +78,7 @@ async def executor_node(state: BugFixState) -> dict[str, Any]:
             {
                 "plan_step": current_plan,
                 "step_type": step_type,
+                "plan_attempt": state.get("replan_count", 0),
                 **result,
             }
         ],

@@ -6,6 +6,9 @@ from app.planner import planner_node
 from app.replanner import replanner_node, should_replan
 from app.task_persistence import TaskPersistence
 from typing import Any
+from collections.abc import Awaitable, Callable
+
+StateProgressCallback = Callable[[BugFixState], Awaitable[None]]
 
 def resume_entry(state: BugFixState) -> str:
     last_node = state.get("last_node")
@@ -136,6 +139,7 @@ async def run_bugfix_graph(
     session_id: str | None = None,
     task_persistence: TaskPersistence | None = None,
     resume_state: BugFixState | None = None,
+    on_state: StateProgressCallback | None = None,
 ) -> BugFixState:
     graph = build_bugfix_graph()
 
@@ -162,5 +166,7 @@ async def run_bugfix_graph(
                 session_id=session_id,
                 state=state,
             )
+        if on_state is not None:
+            await on_state(state)
 
     return final_state
