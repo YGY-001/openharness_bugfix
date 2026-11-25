@@ -39,6 +39,7 @@ async def call_llm(
     prompt: str,
     max_tokens: int = 2000,
     temperature: float = 0.3,
+    thinking: bool | None = None,
 ) -> str:
     config = get_api_config()
 
@@ -49,6 +50,22 @@ async def call_llm(
 
     url = f"{config['base_url']}/chat/completions"
 
+    payload: dict[str, Any] = {
+        "model": config["model"],
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    if thinking is not None:
+        payload["thinking"] = {
+            "type": "enabled" if thinking else "disabled"
+        }
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             url,
@@ -56,30 +73,28 @@ async def call_llm(
                 "Authorization": f"Bearer {config['api_key']}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": config["model"],
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
+            json=payload,
         )
 
         response.raise_for_status()
         data: dict[str, Any] = response.json()
 
     try:
-        content = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        message = choice["message"]
+        content = message.get("content")
     except (KeyError, IndexError, TypeError) as exc:
         raise RuntimeError(
             "The model API returned an unexpected response format."
         ) from exc
 
     if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("The model API returned an empty response.")
+        finish_reason = choice.get("finish_reason", "unknown")
+        reasoning_present = bool(message.get("reasoning_content"))
+        raise RuntimeError(
+            "The model API returned empty content "
+            f"(finish_reason={finish_reason}, "
+            f"reasoning_content_present={reasoning_present})."
+        )
 
     return content.strip()

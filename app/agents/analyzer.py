@@ -108,6 +108,7 @@ async def analyzer_handler(state: BugFixState) -> dict[str, Any]:
         prompt,
         max_tokens=2500,
         temperature=0.2,
+        thinking=False,
     )
     result = parse_analysis_response(content)
 

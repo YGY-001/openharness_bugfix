@@ -33,6 +33,7 @@ class BugFixState(TypedDict):
     replan_count: int
     error: str | None
     done: bool
+    last_node: str | None
 
 def create_initial_state(
     code: str,
@@ -60,5 +61,5 @@ def create_initial_state(
         "replan_count": 0,
         "error": None,
         "done": False,
-
+        "last_node": None,
     }

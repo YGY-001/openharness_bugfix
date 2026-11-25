@@ -102,6 +102,7 @@ async def _classify_agents_with_llm(
         prompt,
         max_tokens=200,
         temperature=0.0,
+        thinking=False,
     )
 
     match = re.search(r"\[[\s\S]*]", content)

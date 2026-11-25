@@ -2,21 +2,65 @@ import logging
 from app.task_store import TaskStore
 from graph.plan_execute import run_planner_graph, run_bugfix_graph
 from datetime import datetime
+from app.task_persistence import TaskPersistence
+from typing import Any
 
 logger = logging.getLogger(__name__)
+task_persistence = TaskPersistence()
+# 当前活跃的task 避免同一会话重复排入后台
+_active_task_ids: set[str] = set()
 
 
-async def run_bugfix_task(task_store: TaskStore, task_id: str) -> None:
+def reserve_task(task_id: str) -> bool:
+    if task_id in _active_task_ids:
+        return False
+
+    _active_task_ids.add(task_id)
+    return True
+
+
+def release_task(task_id: str) -> None:
+    _active_task_ids.discard(task_id)
+
+async def run_bugfix_task(
+    task_store: TaskStore,
+    task_id: str,
+    resume_state: dict[str, Any] | None = None,
+    task_reserved: bool = False,
+) -> None:
+    if not task_reserved and not reserve_task(task_id):
+        logger.warning("Task %s is already running; duplicate run ignored", task_id)
+        return
+
+    try:
+        await _run_bugfix_task_body(
+            task_store,
+            task_id,
+            resume_state,
+        )
+    finally:
+        release_task(task_id)
+
+async def _run_bugfix_task_body(task_store: TaskStore, task_id: str, resume_state:dict[str,Any] | None = None) -> None:
     task = task_store.get(task_id)
     if task is None:
         logger.error("Task %s was not found before background execution", task_id)
         return
     try:
+        resume_progress = 0.0
+        if resume_state is not None:
+            total_steps = len(resume_state.get("plan", []))
+            if total_steps:
+                resume_progress = min(
+                    resume_state.get("current_step", 0) / total_steps,
+                    1.0,
+                )
+
         task_store.update(
             task_id,
             {
                 "status": "running",
-                "progress": 0.0,
+                "progress": resume_progress,
             },
         )
 
@@ -25,6 +69,9 @@ async def run_bugfix_task(task_store: TaskStore, task_id: str) -> None:
             language=task["language"],
             test_case=task.get("test_case"),
             description=task.get("description"),
+            session_id=task["session_id"],
+            task_persistence=task_persistence,
+            resume_state=resume_state,
         )
         analysis_result = final_state.get("analysis_result") or {}
         step_results = final_state.get("step_results", [])

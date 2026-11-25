@@ -4,7 +4,27 @@ from app.agent_state import BugFixState, create_initial_state
 from app.executor import executor_node
 from app.planner import planner_node
 from app.replanner import replanner_node, should_replan
+from app.task_persistence import TaskPersistence
+from typing import Any
 
+def resume_entry(state: BugFixState) -> str:
+    last_node = state.get("last_node")
+
+    if last_node == "planner":
+        return "executor"
+
+    if last_node == "executor":
+        if should_continue_executing(state) == "continue":
+            return "executor"
+        return "replanner"
+
+    if last_node == "replanner":
+        if should_replan(state) == "replan":
+            return "planner"
+        return "end"
+
+    # 新任务没有 last_node，从 Planner 开始。
+    return "planner"
 
 def should_continue_executing(state: BugFixState) -> str:
     if state.get("error"):
@@ -29,16 +49,44 @@ def build_planner_graph():
 
     return builder.compile()
 
+async def planner_checkpoint_node(
+    state: BugFixState,
+) -> dict[str, Any]:
+    updates = await planner_node(state)
+    return {**updates, "last_node": "planner"}
+
+
+async def executor_checkpoint_node(
+    state: BugFixState,
+) -> dict[str, Any]:
+    updates = await executor_node(state)
+    return {**updates, "last_node": "executor"}
+
+
+async def replanner_checkpoint_node(
+    state: BugFixState,
+) -> dict[str, Any]:
+    updates = await replanner_node(state)
+    return {**updates, "last_node": "replanner"}
 
 def build_bugfix_graph():
     """完整的 Planner → Executor → Replanner 控制流程。"""
     builder = StateGraph(BugFixState)
 
-    builder.add_node("planner", planner_node)
-    builder.add_node("executor", executor_node)
-    builder.add_node("replanner", replanner_node)
+    builder.add_node("planner", planner_checkpoint_node)
+    builder.add_node("executor", executor_checkpoint_node)
+    builder.add_node("replanner", replanner_checkpoint_node)
 
-    builder.add_edge(START, "planner")
+    builder.add_conditional_edges(
+        START,
+        resume_entry,
+        {
+            "planner": "planner",
+            "executor": "executor",
+            "replanner": "replanner",
+            "end": END,
+        },
+    )
     builder.add_edge("planner", "executor")
 
     builder.add_conditional_edges(
@@ -85,14 +133,34 @@ async def run_bugfix_graph(
     language: str = "java",
     test_case: str | None = None,
     description: str | None = None,
+    session_id: str | None = None,
+    task_persistence: TaskPersistence | None = None,
+    resume_state: BugFixState | None = None,
 ) -> BugFixState:
     graph = build_bugfix_graph()
 
-    initial_state = create_initial_state(
-        code=code,
-        language=language,
-        test_case=test_case,
-        description=description
-    )
+    if resume_state is not None:
+        initial_state = resume_state
+    else:
+        initial_state = create_initial_state(
+            code=code,
+            language=language,
+            test_case=test_case,
+            description=description,
+        )
+    final_state = initial_state
 
-    return await graph.ainvoke(initial_state)
+    #边执行langgraph 边保存运行状态
+    async for state in graph.astream(
+            initial_state,
+            stream_mode="values",
+    ):
+        final_state = state
+
+        if task_persistence is not None and session_id is not None:
+            await task_persistence.save_agent_state(
+                session_id=session_id,
+                state=state,
+            )
+
+    return final_state

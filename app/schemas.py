@@ -1,6 +1,11 @@
 from pydantic import BaseModel,Field
 from typing import Any
 
+#会话恢复
+class ResumeRequest(BaseModel):
+    session_id: str
+
+# bug请求接受
 class BugSubmitRequest(BaseModel):
     code: str
     language: str = "java"
@@ -9,14 +14,14 @@ class BugSubmitRequest(BaseModel):
     severity: str = "MEDIUM"
     test_case: str | None = None
 
-
+# bug请求返回
 class BugSubmitAccepted(BaseModel):
     status: str
     task_id: str
     session_id: str
     message: str
 
-
+# bug回复
 class BugTaskResponse(BaseModel):
     task_id: str
     session_id: str

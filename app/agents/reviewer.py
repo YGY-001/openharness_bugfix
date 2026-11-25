@@ -62,6 +62,7 @@ async def reviewer_handler(state: BugFixState) -> dict[str, Any]:
         prompt,
         max_tokens=2000,
         temperature=0.2,
+        thinking=False,
     )
     result = parse_review_response(content)
 

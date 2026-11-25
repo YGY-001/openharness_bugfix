@@ -97,6 +97,7 @@ async def validator_handler(state: BugFixState) -> dict[str, Any]:
         prompt,
         max_tokens=2000,
         temperature=0.1,
+        thinking=False,
     )
     result = parse_validation_response(content)
 
