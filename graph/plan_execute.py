@@ -140,6 +140,7 @@ async def run_bugfix_graph(
     task_persistence: TaskPersistence | None = None,
     resume_state: BugFixState | None = None,
     on_state: StateProgressCallback | None = None,
+    username:str | None = None,
 ) -> BugFixState:
     graph = build_bugfix_graph()
 
@@ -151,6 +152,7 @@ async def run_bugfix_graph(
             language=language,
             test_case=test_case,
             description=description,
+            username=username,
         )
     final_state = initial_state
 

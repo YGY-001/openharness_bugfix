@@ -8,6 +8,7 @@ class BugFixState(TypedDict):
     language: str
     description: str | None
     test_case: str | None
+    username: str | None
 
     # 计划
     plan: list[str]
@@ -40,8 +41,10 @@ def create_initial_state(
     language: str = "java",
     test_case: str | None = None,
     description: str | None = None,
+    username: str | None = None
 ) -> BugFixState:
     return {
+        "username":username,
         "code": code,
         "language": language,
         "test_case": test_case,

@@ -68,3 +68,93 @@ class TaskStore:
             return json.loads(payload)
 
         return self._tasks.get(task_id)
+
+    def list_tasks(
+        self,
+        username:str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+
+    ) -> dict[str, Any]:
+        tasks = []
+
+        if self._redis is not None:
+            pattern = self._key("*")
+
+            for key in self._redis.scan_iter(match=pattern):
+                payload = self._redis.get(key)
+
+                if payload is None:
+                    continue
+
+                task = json.loads(payload)
+                task.setdefault("task_id", key.rsplit(":", 1)[-1])
+                tasks.append(task)
+        else:
+            tasks = [
+                dict(task)
+                for task in self._tasks.values()
+            ]
+
+        if status:
+            tasks = [
+                task
+                for task in tasks
+                if task.get("status") == status
+            ]
+        #按用户名筛选
+        if username:
+            tasks = [
+                task
+                for task in tasks
+                if task.get("username") == username
+            ]
+        tasks.sort(
+            key=lambda task: task.get("created_at", ""),
+            reverse=True,
+        )
+
+        total = len(tasks)
+
+        return {
+            "tasks": tasks[:limit],
+            "total": total,
+        }
+
+    def get_task_stats(self, username: str) -> dict[str, int]:
+        stats = {
+            "total": 0,
+            "pending": 0,
+            "running": 0,
+            "completed": 0,
+            "failed": 0,
+            "no_bugs_found": 0,
+        }
+
+        if self._redis is not None:
+            tasks = []
+
+            for key in self._redis.scan_iter(match=self._key("*")):
+                payload = self._redis.get(key)
+                if payload is not None:
+                    tasks.append(json.loads(payload))
+        else:
+            tasks = list(self._tasks.values())
+
+        for task in tasks:
+            if task.get("username") != username:
+                continue
+
+            stats["total"] += 1
+            status = task.get("status")
+
+            if status in {
+                "pending",
+                "running",
+                "completed",
+                "failed",
+                "no_bugs_found",
+            }:
+                stats[status] += 1
+
+        return stats

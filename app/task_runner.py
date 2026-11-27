@@ -146,6 +146,7 @@ async def _run_bugfix_task_body(task_store: TaskStore, task_id: str, resume_stat
             task_persistence=task_persistence,
             resume_state=resume_state,
             on_state=report_progress,
+            username=task.get("username"),
         )
         analysis_result = final_state.get("analysis_result") or {}
         step_results = final_state.get("step_results", [])
